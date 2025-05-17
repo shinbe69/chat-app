@@ -1,53 +1,56 @@
 const express = require('express')
+const Websocket = require('ws')
 require('dotenv').config()
 const app = express()
 app.use(express.json())
-const broker = require('./connect-broker')
+const {connectToRabbitMQ} = require('./connect-broker')
 const router = require('./router')
+let wss
 
-broker.isConnect.then(
+connectToRabbitMQ().then(
     (connection) => {
         console.log('Connect to broker successfuly!')
-        app.listen(process.env.PORT || 3003, process.env.HOST || '0.0.0.0', () => {
+        server = app.listen(process.env.PORT || 3003, process.env.HOST || '0.0.0.0', () => {
             app.use(router)
+            wss = new Websocket.Server({ server })
+            wss.on('connection', (ws) => {
+                console.log('React client connected via Websocket')
+                ws.on('close', () => console.log('React client disconnected'))
+            })
             console.log('Chat server is running on', process.env.HOST, 'at port:', process.env.PORT, '!')
             //send message
             app.post('/dm', (req, res) => {
-                let { message } = req.body
+                let { message, staff_id } = req.body
                 connection.createChannel(function(error1, channel) {
                     if (error1) {
                         throw error1;
                     }
-            
-                    var queue = 'hello';
-                    channel.assertQueue(queue, {
-                        durable: false
+                    channel.assertQueue(staff_id, {
+                        durable: true
                     });
-                    channel.sendToQueue(queue, Buffer.from(message));
-                    res.send(200)
-                
-                    setTimeout(function() {
-                        connection.close();
-                    }, 500);
+                    channel.sendToQueue(staff_id, Buffer.from(message), {persistent: true});
+                    res.sendStatus(200)
                    
                 });
             })
 
             //get message
             app.get('/dm', (req, res) => {
+                let { staff_id } = req.body
                 connection.createChannel(function(error1, channel) {
                     if (error1) {
                         throw error1;
                     }
-            
-                    var queue = 'hello';
-            
-                    channel.assertQueue(queue, {
-                        durable: false
+                    channel.assertQueue(staff_id, {
+                        durable: true
                     });
             
-                    channel.consume(queue, function(msg) {
-                        console.log(" [x] Received %s", msg.content.toString());
+                    channel.consume(staff_id, function(msg) {
+                        wss.clients.forEach((client) => {
+                            if (client.readyState === Websocket.OPEN) {
+                                client.send(JSON.stringify(msg))
+                            }
+                        });
                     }, {
                         noAck: true
                     });
@@ -56,7 +59,7 @@ broker.isConnect.then(
             
         })
     },
-    () => {
-        console.log('Connect to broker failed!')
+    (err) => {
+        console.log('Connect to broker failed! Error:', err)
     }
 )

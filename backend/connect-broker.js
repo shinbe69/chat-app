@@ -1,13 +1,25 @@
-var amqp = require('amqplib/callback_api');
+const amqp = require('amqplib/callback_api');
 
-let isConnect = new Promise((resolve, reject) => {
-    amqp.connect('amqp://10.17.12.239', function(error0, connection) {
-        if (error0) {
-            reject(false)
-        }
-        else
-            resolve(connection)
+function connectToRabbitMQ() {
+    return new Promise((resolve, reject) => {
+        let count = 0
+        let id = setInterval(async () => {
+            await amqp.connect('amqp://BROKER', (err, connection) => {
+                if (err) {
+                    if (count == 5) {
+                        clearInterval(id)
+                        return reject(err)
+                    }
+                    console.log(err)
+                    console.log('Connecting to message broker fail, trying again...')
+                    count++
+                } else {
+                    clearInterval(id)
+                    resolve(connection);
+                }
+            })  
+        }, 5000)
     });
-})
+}
 
-module.exports = {isConnect}
+module.exports = { connectToRabbitMQ }
