@@ -46,9 +46,10 @@ connectToRabbitMQ().then(
                     });
             
                     channel.consume(staff_id, function(msg) {
+                        console.log('Message:', msg.content.toString())
                         wss.clients.forEach((client) => {
                             if (client.readyState === Websocket.OPEN) {
-                                client.send(JSON.stringify(msg))
+                                client.send(JSON.stringify(msg.content.toString()))
                             }
                         });
                     }, {
